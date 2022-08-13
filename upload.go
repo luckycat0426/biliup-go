@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/go-querystring/query"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
@@ -18,17 +18,56 @@ import (
 
 var ChunkSize int = 10485760
 
+const (
+	Auto        = "auto"
+	Cos         = "cos"
+	CosInternal = "cos-internal"
+	Bda2        = "bda2"
+	Ws          = "ws"
+	Qn          = "qn"
+)
+
+var DefaultHeader = http.Header{
+	"User-Agent": []string{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/63.0.3239.108"},
+	"Referer":    []string{"https://www.bilibili.com"},
+	"Connection": []string{"keep-alive"},
+}
+
 const BilibiliMaxRetryTimes = 10
 const ChunkUploadMaxRetryTimes = 10 // 上传分片最大重试次数
 type Bvid string
 
 type Biliup struct {
 	User        User   `json:"user"`
-	Lives       string `json:"url"`
-	UploadLines string `json:"upload_lines"`
-	Threads     int    `json:"threads"`
+	Lives       string `json:"url,omitempty"`
+	UploadLines string `json:"upload_lines,omitempty"`
+	Threads     int    `json:"threads,omitempty"`
+	CheckParams bool   `json:"check_params,omitempty"`
+	AutoFix     bool   `json:"auto_fix,omitempty"`
+	Header      http.Header
+	Client      http.Client
 	VideoInfos
 }
+
+func New(u User) (*Biliup, error) {
+	jar, _ := cookiejar.New(nil)
+	b := Biliup{
+		User:        u,
+		Threads:     3,
+		UploadLines: Auto,
+		Header:      DefaultHeader,
+		Client: http.Client{
+			Jar:     jar,
+			Timeout: time.Second * 5,
+		},
+	}
+	err := CookieLoginCheck(u, &b)
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
 type VideoInfos struct {
 	Tid         int      `json:"tid"`
 	Title       string   `json:"title"`
@@ -83,73 +122,58 @@ type UploadedFile struct {
 	FileName string
 }
 
-var client http.Client
-var Header = http.Header{
-	"User-Agent": []string{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/63.0.3239.108"},
-	"Referer":    []string{"https://www.bilibili.com"},
-	"Connection": []string{"keep-alive"},
-}
-
-func init() {
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		fmt.Printf("Got error while creating cookie jar %s", err.Error())
-	}
-	client = http.Client{
-		Jar: jar,
-	}
-}
-
-func CookieLoginCheck(u User) error {
+func CookieLoginCheck(u User, b *Biliup) error {
 	cookie := []*http.Cookie{{Name: "SESSDATA", Value: u.SESSDATA},
 		{Name: "DedeUserID", Value: u.DedeUserID},
 		{Name: "DedeUserID__ckMd5", Value: u.DedeuseridCkmd5},
 		{Name: "bili_jct", Value: u.BiliJct}}
 	urlObj, _ := url.Parse("https://api.bilibili.com")
-	client.Jar.SetCookies(urlObj, cookie)
+	b.Client.Jar.SetCookies(urlObj, cookie)
 	apiUrl := "https://api.bilibili.com/x/web-interface/nav"
 	req, _ := http.NewRequest("GET", apiUrl, nil)
-	res, err := client.Do(req)
+	res, err := b.Client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return err
 	}
 	var t struct {
 		Code int `json:"code"`
 	}
-	_ = json.Unmarshal(body, &t)
+	err = json.Unmarshal(body, &t)
+	if err != nil {
+		return fmt.Errorf("b站返回无法解析的数据: %s", string(body))
+	}
 	if t.Code != 0 {
 		return errors.New("cookie login failed")
 	}
 	urlObj, _ = url.Parse("https://member.bilibili.com")
-	client.Jar.SetCookies(urlObj, cookie)
+	b.Client.Jar.SetCookies(urlObj, cookie)
 	return nil
 }
 func selectUploadOs(lines string) uploadOs {
-	var os uploadOs
-	if lines == "auto" {
+	var o uploadOs
+	if lines == Auto {
 		res, err := http.Get("https://member.bilibili.com/preupload?r=probe")
 		if err != nil {
 			return defaultOs
 		}
 		defer res.Body.Close()
-		body, err := ioutil.ReadAll(res.Body)
-		lineinfo := struct {
+		body, err := io.ReadAll(res.Body)
+		lineInfo := struct {
 			Ok    int        `json:"OK"`
 			Lines []uploadOs `json:"lines"`
 		}{}
-		_ = json.Unmarshal(body, &lineinfo)
-		if lineinfo.Ok != 1 {
+		_ = json.Unmarshal(body, &lineInfo)
+		if lineInfo.Ok != 1 {
 			return defaultOs
 		}
 		fastestLine := make(chan uploadOs, 1)
 		timer := time.NewTimer(time.Second * 10)
-		for _, line := range lineinfo.Lines {
+		for _, line := range lineInfo.Lines {
 			line := line
 			go func() {
 				res, _ := http.Get("https" + line.ProbeUrl)
@@ -165,45 +189,42 @@ func selectUploadOs(lines string) uploadOs {
 			return line
 		}
 	} else {
-		if lines == "bda2" {
-			os = uploadOs{
+		if lines == Bda2 {
+			o = uploadOs{
 				Os:       "upos",
 				Query:    "upcdn=bda2&probe_version=20211012",
 				ProbeUrl: "//upos-sz-upcdnbda2.bilivideo.com/OK",
 			}
-		} else if lines == "ws" {
-			os = uploadOs{
+		} else if lines == Ws {
+			o = uploadOs{
 				Os:       "upos",
 				Query:    "upcdn=ws&probe_version=20211012",
 				ProbeUrl: "//upos-sz-upcdnws.bilivideo.com/OK",
 			}
-		} else if lines == "qn" {
-			os = uploadOs{
+		} else if lines == Qn {
+			o = uploadOs{
 				Os:       "upos",
 				Query:    "upcdn=qn&probe_version=20211012",
 				ProbeUrl: "//upos-sz-upcdnqn.bilivideo.com/OK",
 			}
-		} else if lines == "cos" {
-			os = uploadOs{
+		} else if lines == Cos {
+			o = uploadOs{
 				Os:       "cos",
 				Query:    "",
 				ProbeUrl: "",
 			}
-		} else if lines == "cos-internal" {
-			os = uploadOs{
+		} else if lines == CosInternal {
+			o = uploadOs{
 				Os:       "cos-internal",
 				Query:    "",
 				ProbeUrl: "",
 			}
 		}
 	}
-	return os
+	return o
 }
-func UploadFile(file *os.File, user User, lines string) (*UploadRes, error) {
-	if err := CookieLoginCheck(user); err != nil {
-		return &UploadRes{}, fmt.Errorf("cookies 校验失败 %s", err.Error())
-	}
-	upOs := selectUploadOs(lines)
+func (bu *Biliup) UploadFile(file *os.File) (*UploadRes, error) {
+	upOs := selectUploadOs(bu.UploadLines)
 	state, _ := file.Stat()
 	q := struct {
 		R       string `url:"r"`
@@ -231,16 +252,18 @@ func UploadFile(file *os.File, user User, lines string) (*UploadRes, error) {
 		q.Profile = "ugcupos/bupfetch"
 	}
 	v, _ := query.Values(q)
-	client.Timeout = time.Second * 5
+
 	req, _ := http.NewRequest("GET", "https://member.bilibili.com/preupload?"+upOs.Query+v.Encode(), nil)
 	var content []byte
+
 	for i := 0; i < BilibiliMaxRetryTimes; i++ {
-		res, err := client.Do(req)
+		res, err := bu.Client.Do(req)
 		if err != nil {
+			res.Body.Close()
 			time.Sleep(time.Second * 1)
 			continue
 		}
-		content, err = ioutil.ReadAll(res.Body)
+		content, err = io.ReadAll(res.Body)
 		res.Body.Close()
 		if err == nil {
 			break
@@ -259,7 +282,7 @@ func UploadFile(file *os.File, user User, lines string) (*UploadRes, error) {
 		if body.Ok != 1 {
 			return &UploadRes{}, errors.New("query Upload Parameters failed")
 		}
-		videoInfo, err := cos(file, int(state.Size()), body, internal, ChunkSize)
+		videoInfo, err := cos(file, int(state.Size()), body, internal, ChunkSize, bu.Threads)
 		return videoInfo, err
 
 	} else if upOs.Os == "upos" {
@@ -268,14 +291,14 @@ func UploadFile(file *os.File, user User, lines string) (*UploadRes, error) {
 		if body.Ok != 1 {
 			return &UploadRes{}, errors.New("query UploadFile failed")
 		}
-		videoInfo, err := upos(file, int(state.Size()), body)
+		videoInfo, err := upos(file, int(state.Size()), body, bu.Threads, bu.Header)
 		return videoInfo, err
 	}
 	return &UploadRes{}, errors.New("unknown upload os")
 }
 
-func FolderUpload(folder string, u User, lines string) ([]*UploadRes, []UploadedFile, error) {
-	dir, err := ioutil.ReadDir(folder)
+func (bu *Biliup) FolderUpload(folder string) ([]*UploadRes, []UploadedFile, error) {
+	dir, err := os.ReadDir(folder)
 	if err != nil {
 		fmt.Printf("read dir error:%s", err)
 		return nil, nil, err
@@ -289,7 +312,7 @@ func FolderUpload(folder string, u User, lines string) ([]*UploadRes, []Uploaded
 			log.Printf("open file %s error:%s", filename, err)
 			continue
 		}
-		videoPart, err := UploadFile(uploadFile, u, lines)
+		videoPart, err := bu.UploadFile(uploadFile)
 		if err != nil {
 			log.Printf("UploadFile file error:%s", err)
 			uploadFile.Close()
@@ -311,7 +334,7 @@ func UploadFolderWithSubmit(uploadPath string, Biliup Biliup) ([]UploadedFile, e
 		uploadPath = filepath.Join(pwd, uploadPath)
 	}
 	fmt.Println(uploadPath)
-	submitFiles, uploadedFile, err := FolderUpload(uploadPath, Biliup.User, Biliup.UploadLines)
+	submitFiles, uploadedFile, err := Biliup.FolderUpload(uploadPath)
 	if err != nil {
 		fmt.Printf("UploadFile file error:%s", err)
 		return nil, err

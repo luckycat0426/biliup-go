@@ -53,7 +53,7 @@ type partsXml struct {
 	}
 }
 
-func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, ChunkSize int) (*UploadRes, error) {
+func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, ChunkSize int, thread int) (*UploadRes, error) {
 	uploadUrl := ret.Url
 	if internal {
 		uploadUrl = strings.Replace(uploadUrl, "cos.accelerate", "cos-internal.ap-shanghai", 1)
@@ -62,7 +62,7 @@ func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, Ch
 	client := &http.Client{}
 	client.Timeout = 5 * time.Second
 	req, _ := http.NewRequest("POST", uploadUrl+"?uploads&output=json", nil)
-	req.Header = Header.Clone()
+	req.Header = DefaultHeader.Clone()
 	req.Header.Set("Authorization", ret.PostAuth)
 	res, err := client.Do(req)
 	if err != nil {
@@ -82,20 +82,20 @@ func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, Ch
 	if resxml.UploadID == "" {
 		return nil, errors.New("get cos UploadId failed")
 	}
-	PostHeader := Header.Clone()
+	PostHeader := DefaultHeader.Clone()
 	PostHeader.Set("Authorization", ret.PutAuth)
 	uploader := &chunkUploader{
 		uploadId:     resxml.UploadID,
 		chunks:       int(math.Ceil(float64(totalSize) / float64(ChunkSize))),
 		chunkSize:    ChunkSize,
 		totalSize:    totalSize,
-		threads:      Threads,
+		threads:      thread,
 		url:          uploadUrl,
 		chunkInfo:    make(chan chunkInfo, int(math.Ceil(float64(totalSize)/float64(ChunkSize)))+10),
 		uploadMethod: "cos",
 		Header:       PostHeader,
 		file:         file,
-		MaxThread:    make(chan struct{}, Threads),
+		MaxThread:    make(chan struct{}, thread),
 	}
 	err = uploader.upload()
 	if err != nil {
@@ -147,7 +147,7 @@ func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, Ch
 		client := &http.Client{}
 		client.Timeout = 15 * time.Second
 		req, _ := http.NewRequest("POST", "https:"+ret.FetchUrl, nil)
-		req.Header = Header.Clone()
+		req.Header = DefaultHeader.Clone()
 		req.Header.Set("X-Upos-Fetch-Source", ret.FetchHeaders.XUposFetchSource)
 		req.Header.Set("X-Upos-Auth", ret.FetchHeaders.XUposAuth)
 		req.Header.Set("Fetch-Header-Authorization", ret.FetchHeaders.FetchHeaderAuthorization)

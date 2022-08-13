@@ -17,8 +17,6 @@ import (
 	"github.com/google/go-querystring/query"
 )
 
-const Threads = 4
-
 type uposUploadSegments struct {
 	Ok        int    `json:"OK"`
 	Auth      string `json:"auth"`
@@ -49,7 +47,7 @@ type partsJson struct {
 	Parts []partsInfo `json:"parts"`
 }
 
-func upos(file *os.File, totalSize int, ret *uposUploadSegments) (*UploadRes, error) {
+func upos(file *os.File, totalSize int, ret *uposUploadSegments, Threads int, Header http.Header) (*UploadRes, error) {
 	uploadUrl := "https:" + ret.Endpoint + "/" + strings.TrimPrefix(ret.UposURI, "upos://")
 	client := &http.Client{}
 	client.Timeout = time.Second * 5

@@ -11,11 +11,6 @@ import (
 	"strconv"
 )
 
-// var Header = http.Header{
-// 	"User-Agent": []string{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/63.0.3239.108"},
-// 	"Referer":    []string{"https://www.bilibili.com"},
-// 	"Connection": []string{"keep-alive"},
-// }
 type chunkInfo struct {
 	Order int
 	Etag  string
