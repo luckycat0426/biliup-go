@@ -2,18 +2,24 @@ package bilibili
 
 import (
 	. "biliup"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/go-querystring/query"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/google/go-querystring/query"
+	"github.com/tidwall/gjson"
 )
 
 var ChunkSize int = 10485760
@@ -140,6 +146,16 @@ var defaultOs = uploadOs{
 type UploadedFile struct {
 	FilePath string
 	FileName string
+}
+
+func NewUser(SESSDATA, BiliJct, DedeUserId, DedeUseridCkmd5 string) User {
+	return User{
+		SESSDATA:        SESSDATA,
+		BiliJct:         BiliJct,
+		DedeUserID:      DedeUserId,
+		DedeuseridCkmd5: DedeUseridCkmd5,
+		AccessToken:     BiliJct,
+	}
 }
 
 func CookieLoginCheck(u User, b *Bilibili) error {
@@ -366,4 +382,42 @@ func UploadFolderWithSubmit(uploadPath string, Biliup Bilibili) ([]UploadedFile,
 		return nil, err
 	}
 	return uploadedFile, nil
+}
+
+func FileToBase64Image(coverPath string) (string, error) {
+	// 传入文件获取字节
+	coverFile, err := os.Open(coverPath)
+	if err != nil {
+		return "", err
+	}
+	defer coverFile.Close()
+	coverBytes, err := ioutil.ReadAll(coverFile)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(coverBytes), nil
+}
+
+func (bu *Bilibili) GetBiliCoverUrl(base64 string) (string, error) {
+	// 对传入参数进行urlCode编码
+	urlCode := url.QueryEscape(base64)
+	timeStamp := time.Now().UnixMilli()
+	url := "https://member.bilibili.com/x/vu/web/cover/up?t=" + strconv.FormatInt(timeStamp, 10)
+	method := "POST"
+	payload := strings.NewReader("cover=" + urlCode + "&csrf=" + bu.User.AccessToken)
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		return "", err
+	}
+	res, err := bu.Client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	return gjson.GetBytes(body, "data.url").String(), nil
 }

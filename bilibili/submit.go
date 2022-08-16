@@ -119,6 +119,19 @@ func (u *Bilibili) Submit(v []*UploadRes) (interface{}, error) {
 	if u.Title == "" {
 		u.Title = v[0].Title
 	}
+	if u.CoverPath != "" {
+		base64, err := FileToBase64Image(u.CoverPath)
+		if err != nil {
+			return nil, err
+		}
+		u.Cover, err = u.GetBiliCoverUrl(base64)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if u.Cover == "" {
+		return nil, errors.New("cover must be set")
+	}
 	params := submitParams{
 		Copyright:    u.Copyright,
 		Source:       u.Source,
