@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -40,30 +39,52 @@ type submitParams struct {
 	Dtime  int         `json:"dtime"`
 }
 
-func VerifyAndFix(params *submitParams) error {
+func Verify(params *submitParams, f bool) error {
 	var errs string
 	if params.Copyright < 1 || params.Copyright > 2 {
-		params.Copyright = 2
-		errs += "copyright must be 1 or 2,Set to 2 "
+		errs += "copyright must be 1 or 2"
+		if f {
+			params.Copyright = 2
+			errs += ",Set to 2  "
+		}
 	}
 	if params.Copyright == 2 && params.Source == "" {
-		params.Source = "转载地址"
 		errs += "when copyright is 2,source must be set "
+		if f {
+			params.Source = "转载地址"
+			errs += "source set to 转载地址 "
+		}
+	}
+	if params.Tags == "" {
+		errs += "tags must be set "
+		if f {
+			params.Tags = "这是一个标签"
+			errs += ",set to 这是一个标签 "
+		}
 	}
 	if params.Tid <= 0 {
-		params.Tid = 122
-		errs += "tid must be set,Set to 122 "
+		errs += "tid must be set"
+		if f {
+			params.Tid = 122
+			errs += ",Set to 122 "
+		}
 	}
 	if params.Title == "" {
-		params.Title = "标题"
-		errs += "title must be set,Set to 标题 "
+		errs += "title must be set"
+		if f {
+			params.Title = "标题"
+			errs += "set to 标题 "
+		}
 	}
 	if utf8.RuneCountInString(params.Title) > 80 {
-		tmpTitle := []rune(params.Title)
-		params.Title = string(tmpTitle[:80])
-		errs += "title must be less than 80,Set to " + params.Title
-	}
+		errs += "title must be less than 80 "
+		if f {
+			errs += "Set to " + params.Title
+			tmpTitle := []rune(params.Title)
+			params.Title = string(tmpTitle[:80])
+		}
 
+	}
 	if errs != "" {
 		return errors.New(errs)
 	}
@@ -94,8 +115,7 @@ func submit(token string, params *submitParams) (*submitResponse, error) {
 	return nil, nil
 }
 
-func (u *Bilibili) Submit(v []*UploadRes) ([]SubmitRes, error) {
-	sr := make([]SubmitRes, 2)
+func (u *Bilibili) Submit(v []*UploadRes) (interface{}, error) {
 	if u.Title == "" {
 		u.Title = v[0].Title
 	}
@@ -118,10 +138,12 @@ func (u *Bilibili) Submit(v []*UploadRes) ([]SubmitRes, error) {
 		},
 		Dtime: 0,
 	}
-	if u.CheckParams {
-		err := VerifyAndFix(&params)
-		if err != nil {
-			log.Println(err)
+	err := Verify(&params, u.CheckParams)
+	if err != nil {
+		if u.CheckParams {
+			fmt.Println(err)
+		} else {
+			return nil, err
 		}
 	}
 	for i := range v {
@@ -156,11 +178,10 @@ func (u *Bilibili) Submit(v []*UploadRes) ([]SubmitRes, error) {
 						params.Title = string([]rune(params.Title)[:79])
 					case 21058:
 						fmt.Println("稿件数超过100,分开投稿")
-						res, err := u.Submit(v[:100])
+						_, err := u.Submit(v[:100])
 						if err != nil {
 							return nil, err
 						}
-						sr = append(sr, res...)
 						time.Sleep(time.Minute)
 						params.Title = string([]rune(params.Title)[:utf8.RuneCountInString(params.Title)-1])
 						params.Videos = params.Videos[100:]
@@ -171,10 +192,17 @@ func (u *Bilibili) Submit(v []*UploadRes) ([]SubmitRes, error) {
 						fmt.Println("同一个视频，不能短时间同时提交到不同稿件")
 						time.Sleep(time.Minute)
 					}
+				} else {
+					return nil, err
 				}
 			}
+		} else {
+			return &SubmitRes{
+				rep.Data.Aid,
+				rep.Data.Bvid,
+			}, nil
 		}
-		return sr, nil
+
 	}
 }
 

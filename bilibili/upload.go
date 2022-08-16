@@ -27,6 +27,8 @@ const (
 	Qn          = "qn"
 )
 
+var BilibiliLines = []string{Auto, Cos, CosInternal, Bda2, Ws, Qn}
+
 var DefaultHeader = http.Header{
 	"User-Agent": []string{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/63.0.3239.108"},
 	"Referer":    []string{"https://www.bilibili.com"},
@@ -49,7 +51,30 @@ type Bilibili struct {
 	Client      http.Client
 	VideoInfos
 }
+type SubmitRes struct {
+	Aid  int    `json:"aid"`
+	Bvid string `json:"bvid"`
+}
 
+func (b *Bilibili) SetVideoInfos(v interface{}) error {
+	info, ok := v.(VideoInfos)
+	if !ok {
+		return errors.New("Not A Bilibili VideoInfos")
+	}
+	b.VideoInfos = info
+	return nil
+}
+func (b *Bilibili) SetThreads(Thread uint) {
+	b.Threads = int(Thread)
+}
+func (b *Bilibili) SetUploadLine(uploadLine string) {
+	if !InArray(BilibiliLines, uploadLine) {
+		b.UploadLines = Auto
+		fmt.Printf("upload line %s not support,Support line are %s,set uploadline to AUTO", uploadLine, BilibiliLines)
+	} else {
+		b.UploadLines = uploadLine
+	}
+}
 func New(u User) (*Bilibili, error) {
 	jar, _ := cookiejar.New(nil)
 	b := Bilibili{

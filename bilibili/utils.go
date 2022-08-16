@@ -20,6 +20,14 @@ type InfoFile struct {
 	TokenInfo TokenInfo `json:"token_info"`
 }
 
+func InArray(arr []string, val string) bool {
+	for _, v := range arr {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}
 func GetUserConfFromFile(f *os.File) (*User, error) {
 	var u User
 	b, err := io.ReadAll(f)

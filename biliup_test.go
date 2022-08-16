@@ -1,29 +1,28 @@
 package biliup
 
 import (
-	. "biliup/bilibili"
+	"biliup/bilibili"
+	"fmt"
 	"os"
 	"testing"
 )
 
 func TestBilibiliUpload(t *testing.T) {
-
 	type args struct {
 		filePath string
-		Biliup   Bilibili
 	}
-
 	f, err := os.Open("cookies.json")
 	if err != nil {
 		t.Error(err)
 	}
-	U, err := GetUserConfFromFile(f)
+	U, err := bilibili.GetUserConfFromFile(f)
 	if err != nil {
 		t.Error(err)
 	}
-	B, err := Build(*U, Name)
-	B.(*Bilibili).UploadLines = Ws
-	B.(*Bilibili).VideoInfos = VideoInfos{
+	B, err := Build(*U, bilibili.Name)
+	B.SetUploadLine(bilibili.Ws)
+	B.SetThreads(10)
+	B.(*bilibili.Bilibili).VideoInfos = bilibili.VideoInfos{
 		Tid:         171,
 		Title:       "test",
 		Tag:         []string{"test"},
@@ -39,7 +38,6 @@ func TestBilibiliUpload(t *testing.T) {
 		name: "TestUploadAndSubmit",
 		args: args{
 			filePath: "./test.flv",
-			Biliup:   *B.(*Bilibili),
 		},
 		// TODO: Add test cases.
 	}
@@ -53,9 +51,11 @@ func TestBilibiliUpload(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		_, err = B.Submit([]*UploadRes{
+		resI, err := B.Submit([]*UploadRes{
 			v,
 		})
+		res := resI.(*bilibili.SubmitRes)
+		fmt.Println(res)
 		if err != nil {
 			t.Error(err)
 		}

@@ -25,13 +25,16 @@ func TestMainUpload(t *testing.T) {
 	}
 	B, err := New(*U)
 	B.UploadLines = Ws
-	B.VideoInfos = VideoInfos{
+	err = B.SetVideoInfos(VideoInfos{
 		Tid:         171,
 		Title:       "test",
 		Tag:         []string{"test"},
 		Source:      "test",
 		Copyright:   2,
 		Description: "test",
+	})
+	if err != nil {
+		t.Error(err)
 	}
 	tests := struct {
 		name    string

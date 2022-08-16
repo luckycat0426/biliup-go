@@ -8,7 +8,10 @@ import (
 
 type Biliup interface {
 	UploadFile(*os.File) (*UploadRes, error)
-	Submit([]*UploadRes) ([]SubmitRes, error)
+	Submit([]*UploadRes) (interface{}, error)
+	SetThreads(uint)
+	SetUploadLine(string)
+	SetVideoInfos(interface{}) error
 }
 
 type UploadRes struct {
@@ -17,12 +20,8 @@ type UploadRes struct {
 	Desc     string      `json:"desc"`
 	Info     interface{} `json:"-"`
 }
-type SubmitRes struct {
-	Aid  int    `json:"aid"`
-	Bvid string `json:"bvid"`
-}
 
-//Build Return a new *Biliup base on Uploader
+// Build Return a new *Biliup base on Uploader
 func Build(info interface{}, Uploader string) (Biliup, error) {
 	switch Uploader {
 	case bilibili.Name:
