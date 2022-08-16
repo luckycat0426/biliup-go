@@ -1,4 +1,5 @@
-#biliup-go
+# biliup-go
+
 biliup 的 golang 版本实现
 
 ## 安装
@@ -13,8 +14,8 @@ go get -u github.com/biliup/biliup-go
 package main
 
 import (
-	"github.com/biliup/biliup-go"
-	"github.com/biliup/biliup-go/bilibili"
+ "github.com/biliup/biliup-go"
+ "github.com/biliup/biliup-go/bilibili"
 )
 //手动填写User信息
 u:=User{
@@ -42,6 +43,7 @@ _ = B.SetVideoInfos(bilibili.VideoInfos{
     Source:      "test",
     Copyright:   2,
     Description: "test",
+    CoverPath: "./img.jpg"
 })
 
 file, _ := os.Open(tests.args.filePath)
@@ -49,7 +51,7 @@ file, _ := os.Open(tests.args.filePath)
 v, _ := B.UploadFile(file) 
 //用获取到的视频信息投稿
 resI, _ = B.Submit([]*UploadRes{
-	v,
+ v,
 })
 //如果需要投稿返回信息,投稿获取的结果为Interface{}类型，需要转换为对应平台的 SubmitRes
 //若不需要投稿返回信息，则直接调用Submit方法即可，如果err为nil，则投稿成功
