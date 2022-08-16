@@ -35,7 +35,7 @@ B.SetUploadLine(bilibili.Ws)
 //设置上传线程，默认为3
 B.SetThreads(10)
 //设置稿件信息
-_ = B.SetVideoInfos(VideoInfos{
+_ = B.SetVideoInfos(bilibili.VideoInfos{
     Tid:         171,
     Title:       "test",
     Tag:         []string{"test"},
