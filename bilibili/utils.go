@@ -1,8 +1,10 @@
 package bilibili
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"io/ioutil"
 	"os"
 )
 
@@ -28,6 +30,21 @@ func InArray(arr []string, val string) bool {
 	}
 	return false
 }
+
+func FileToBase64Image(coverPath string) (string, error) {
+	// 传入文件获取字节
+	coverFile, err := os.Open(coverPath)
+	if err != nil {
+		return "", err
+	}
+	defer coverFile.Close()
+	coverBytes, err := ioutil.ReadAll(coverFile)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(coverBytes), nil
+}
+
 func GetUserConfFromFile(f *os.File) (*User, error) {
 	var u User
 	b, err := io.ReadAll(f)

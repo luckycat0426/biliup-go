@@ -2,10 +2,11 @@ package bilibili
 
 import (
 	. "biliup"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/go-querystring/query"
+	"github.com/tidwall/gjson"
 	"io"
 	"io/ioutil"
 	"log"
@@ -17,9 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/go-querystring/query"
-	"github.com/tidwall/gjson"
 )
 
 var ChunkSize int = 10485760
@@ -51,6 +49,7 @@ type Bilibili struct {
 	Lives       string `json:"url,omitempty"`
 	UploadLines string `json:"upload_lines,omitempty"`
 	Threads     int    `json:"threads,omitempty"`
+	WithCover   bool   `json:"with_cover,omitempty"`
 	CheckParams bool   `json:"check_params,omitempty"`
 	AutoFix     bool   `json:"auto_fix,omitempty"`
 	Header      http.Header
@@ -148,13 +147,13 @@ type UploadedFile struct {
 	FileName string
 }
 
-func NewUser(SESSDATA, BiliJct, DedeUserId, DedeUseridCkmd5 string) User {
+func NewUser(SESSDATA, BiliJct, DedeUserId, DedeUseridCkmd5, AccessToken string) User {
 	return User{
 		SESSDATA:        SESSDATA,
 		BiliJct:         BiliJct,
 		DedeUserID:      DedeUserId,
 		DedeuseridCkmd5: DedeUseridCkmd5,
-		AccessToken:     BiliJct,
+		AccessToken:     AccessToken,
 	}
 }
 
@@ -382,20 +381,6 @@ func UploadFolderWithSubmit(uploadPath string, Biliup Bilibili) ([]UploadedFile,
 		return nil, err
 	}
 	return uploadedFile, nil
-}
-
-func FileToBase64Image(coverPath string) (string, error) {
-	// 传入文件获取字节
-	coverFile, err := os.Open(coverPath)
-	if err != nil {
-		return "", err
-	}
-	defer coverFile.Close()
-	coverBytes, err := ioutil.ReadAll(coverFile)
-	if err != nil {
-		return "", err
-	}
-	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(coverBytes), nil
 }
 
 func (bu *Bilibili) GetBiliCoverUrl(base64 string) (string, error) {

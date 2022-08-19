@@ -119,19 +119,29 @@ func (u *Bilibili) Submit(v []*UploadRes) (interface{}, error) {
 	if u.Title == "" {
 		u.Title = v[0].Title
 	}
-	if u.CoverPath != "" {
+	if u.Cover != "" && u.CoverPath != "" && u.WithCover {
 		base64, err := FileToBase64Image(u.CoverPath)
 		if err != nil {
-			return nil, err
+			if u.AutoFix {
+				u.Cover = ""
+				fmt.Printf("设置封面失败，原因：%s\n，使用b站自动生成封面", err.Error())
+			} else {
+				return nil, err
+			}
+
 		}
 		u.Cover, err = u.GetBiliCoverUrl(base64)
 		if err != nil {
-			return nil, err
+			if u.AutoFix {
+				u.Cover = ""
+				fmt.Printf("设置封面失败，原因：%s\n，使用b站自动生成封面", err.Error())
+			} else {
+				return nil, err
+			}
+
 		}
 	}
-	if u.Cover == "" {
-		return nil, errors.New("cover must be set")
-	}
+
 	params := submitParams{
 		Copyright:    u.Copyright,
 		Source:       u.Source,

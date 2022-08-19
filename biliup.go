@@ -25,7 +25,10 @@ type UploadRes struct {
 func Build(info interface{}, Uploader string) (Biliup, error) {
 	switch Uploader {
 	case bilibili.Name:
-		u := info.(bilibili.User)
+		u, ok := info.(bilibili.User)
+		if !ok {
+			return nil, fmt.Errorf("user info is not bilibili.User")
+		}
 		B, err := bilibili.New(u)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init uploader bilibili: %s", err)

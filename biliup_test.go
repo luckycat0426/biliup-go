@@ -3,6 +3,7 @@ package biliup
 import (
 	"biliup/bilibili"
 	"fmt"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"os"
 	"testing"
 )
@@ -41,7 +42,7 @@ func TestBilibiliUpload(t *testing.T) {
 		},
 		// TODO: Add test cases.
 	}
-
+	s3.New(nil)
 	t.Run(tests.name, func(t *testing.T) {
 		file, err := os.Open(tests.args.filePath)
 		if err != nil {

@@ -2,6 +2,7 @@ package bilibili
 
 import (
 	. "biliup"
+	"io"
 
 	"bytes"
 	"encoding/json"
@@ -70,7 +71,7 @@ func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, Ch
 	if err != nil {
 		return nil, err
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
 		return nil, err
