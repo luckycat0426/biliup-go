@@ -132,10 +132,11 @@ func cos(file *os.File, totalSize int, ret *cosUploadSegments, internal bool, Ch
 		req.Header.Set("Authorization", ret.PostAuth)
 		req.Header.Set("Content-Type", "application/xml")
 		res, err := client.Do(req)
-		resBody, err := ioutil.ReadAll(res.Body)
+		resBody, err := io.ReadAll(res.Body)
 		if err != nil || res.StatusCode != 200 {
 			log.Println(err, file.Name(), "第", i, "次请求合并失败，正在重试")
 			fmt.Println(resBody)
+			res.Body.Close()
 			if i == 10 {
 				log.Println(err, file.Name(), "第10次请求合并失败")
 				return nil, errors.New(fmt.Sprintln(file.Name(), "第10次请求合并失败", err))

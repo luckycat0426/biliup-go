@@ -1,10 +1,12 @@
 package xiaohongshu
 
 import (
+	"biliup/httpClient"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	tCos "github.com/tencentyun/cos-go-sdk-v5"
 	"io"
 	"math/rand"
 	"net/http"
@@ -13,13 +15,34 @@ import (
 )
 
 type xiaohongshu struct {
-	Header http.Header
-	Client http.Client
+	Header    http.Header
+	Client    *httpClient.Client
+	ChunkSize int
+	Threads   int
 }
 
-func UploadPhoto(f *os.File) {
-
+func New(cookies string) *xiaohongshu {
+	x := xiaohongshu{Header: DefaultHeader,
+		Client:    httpClient.New(nil),
+		ChunkSize: 4 * 1024 * 1024,
+		Threads:   4,
+	}
+	x.Header.Set("cookie", cookies)
+	x.Client.Header = x.Header
+	return &x
 }
+func (x *xiaohongshu) UploadPhoto(f *os.File) (*string, error) {
+	c, err := x.XiaoHongShuPreUploadQuery()
+	if err != nil {
+		return nil, err
+	}
+	UploadFileName, err := cos(f, c, x.Client)
+	if err != nil {
+		return nil, err
+	}
+	return UploadFileName, nil
+}
+
 type cosPreUploadXmlRes struct {
 	XMLName  xml.Name `xml:"InitiateMultipartUploadResult"`
 	Bucket   string   `xml:"Bucket"`
@@ -44,7 +67,7 @@ type CosAuthorization struct {
 	QSignature     string `json:"q-signature"`
 }
 
-func (x xiaohongshu) XiaoHongShuPreUploadQuery() (*CosEndPointInfo, error) {
+func (x *xiaohongshu) XiaoHongShuPreUploadQuery() (*CosEndPointInfo, error) {
 	queryUrl := fmt.Sprintf("https://creator.xiaohongshu.com/api/media/v1/upload/web/permit?_=%f&biz_name=spectrum&scene=image&file_count=1", rand.Float64())
 	req, _ := http.NewRequest("GET", queryUrl, nil)
 	resp, err := x.Client.Do(req)
@@ -62,7 +85,7 @@ func (x xiaohongshu) XiaoHongShuPreUploadQuery() (*CosEndPointInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(body, t)
+	err = json.Unmarshal(body, &t)
 	if err != nil {
 		return nil, err
 	}
@@ -71,35 +94,16 @@ func (x xiaohongshu) XiaoHongShuPreUploadQuery() (*CosEndPointInfo, error) {
 	}
 	return &t.Data.UploadTempPermits[0], nil
 }
-func GetCosAuthorization(c *CosEndPointInfo) string {
-	t := fmt.Sprintf("%d;%d", time.Now().Unix(), c.ExpireTime/1000)
-	a := CosAuthorization{
-		QSignAlgorithm: "sha1",
-		QAk:            c.SecretId,
-		QSignTime:      t,
-		QKeyTime:       t,
-		QHeaderList:    "host",
-		QUrlParamList:  "prefix;uploads",
-		QSignature:     c.SecretKey,
-	}
-	return fmt.Sprintf("q-sign-algorithm=%s&q-ak=%s&q-sign-time=%s&q-key-time=%s&q-header-list=%s&q-url-param-list=%s&q-signature=%s", a.QSignAlgorithm, a.QAk, a.QSignTime, a.QKeyTime, a.QHeaderList, a.QUrlParamList, a.QSignature)
-}
 
 var DefaultHeader = http.Header{
 	"User-Agent": []string{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/63.0.3239.108"},
-	"Referer":    []string{"https://www.bilibili.com"},
+	"Referer":    []string{"https://www.xiaohongshu.com"},
 	"Connection": []string{"keep-alive"},
 }
 
-func cos(file *os.File, ret CosEndPointInfo, ChunkSize int, thread int) (*string,error) {
-	client := &http.Client{}
-	client.Timeout = 5 * time.Second
-	uploadUrl := fmt.Sprintf("https://%s/%s", ret.UploadAddr, ret.FileIds[0])
-	req, _ := http.NewRequest("POST", uploadUrl, nil)
-	req.Header = DefaultHeader.Clone()
-	req.Header.Set("Authorization", GetCosAuthorization(&ret))
-	req.Header.Set("x-cos-security-token", ret.Token)
-	res,err:=client.Do(req)
+func getPreUploadXml(req *http.Request, client *httpClient.Client) (*cosPreUploadXmlRes, error) {
+
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +112,61 @@ func cos(file *os.File, ret CosEndPointInfo, ChunkSize int, thread int) (*string
 	if err != nil {
 		return nil, err
 	}
-	resxml := cosPreUploadXmlRes{}
-	err = xml.Unmarshal(body, &resxml)
+	resXml := cosPreUploadXmlRes{}
+	err = xml.Unmarshal(body, &resXml)
 	if err != nil {
-		fmt.Println("marshal Cos Videos XMl error", string(body))
-		//return nil, err
+		return nil, fmt.Errorf("unmarshal Cos Videos XMl error: %s", string(body))
 	}
-	if resxml.UploadID == ""
+	if resXml.UploadID == "" {
+		return nil, fmt.Errorf("failed to get uploadId: %s", string(body))
+	}
+	return &resXml, nil
+}
 
+func cos(file *os.File, ret *CosEndPointInfo, client *httpClient.Client) (*string, error) {
+	uploadUrl := fmt.Sprintf("https://%s/%s", ret.UploadAddr, ret.FileIds[0])
+	req, err := http.NewRequest("PUT", uploadUrl, file)
+	if err != nil {
+		return nil, err
+	}
+	duration := int64(ret.ExpireTime) - time.Now().Unix()
+	tCos.AddAuthorizationHeader(ret.SecretId, ret.SecretKey, ret.Token, req, tCos.NewAuthTime(time.Duration(duration)))
+	req.Header.Set("x-cos-security-token", ret.Token)
+	resp, err := client.Do(req)
+	body, err := io.ReadAll(resp.Body)
+	fmt.Println(body)
+	defer resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ret.FileIds[0], nil
+}
+
+func RequestCosMerge(req *http.Request, client *httpClient.Client) error {
+	client.Timeout = 15 * time.Second
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != 200 {
+		return fmt.Errorf("request Cos Merge Failed %s", body)
+	}
+	return nil
+}
+
+type partsXml struct {
+	XMLName xml.Name `xml:"CompleteMultipartUpload"`
+	Part    []struct {
+		XMLName    xml.Name `xml:"Part"`
+		PartNumber int      `xml:"PartNumber"`
+		ETag       struct {
+			Value string `xml:",innerxml"`
+		} `xml:"ETag"`
+	}
 }
